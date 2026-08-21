@@ -49,7 +49,7 @@
     display:flex;align-items:center;justify-content:space-between;
   }
   header .brand{font-family:'Fraunces',serif;font-size:22px;font-weight:700;color:#F4F8F1;display:flex;align-items:center;gap:8px}
-  header .paw{font-size:20px}
+  header .paw{display:block;flex-shrink:0}
   .who-switch{display:flex;background:rgba(255,255,255,.14);border-radius:999px;padding:3px;gap:2px}
   .who-switch button{
     border:none;background:transparent;color:#DCE8DD;font-family:inherit;
@@ -325,7 +325,7 @@
 <body>
 
 <header>
-  <div class="brand"><span class="paw">🐾</span> La Manada</div>
+  <div class="brand"><svg class="paw" width="23" height="23" viewBox="0 0 16 16" aria-hidden="true"><g fill="#E8A13D"><ellipse cx="8" cy="10.3" rx="3.3" ry="2.9"/><ellipse cx="3.9" cy="6.2" rx="1.3" ry="1.65"/><ellipse cx="6.6" cy="4.5" rx="1.3" ry="1.65"/><ellipse cx="9.4" cy="4.5" rx="1.3" ry="1.65"/><ellipse cx="12.1" cy="6.2" rx="1.3" ry="1.65"/></g></svg> La Manada</div>
   <div class="who-switch" id="whoSwitch"></div>
 </header>
 
@@ -346,9 +346,6 @@
 
 <script>
 /* =============== Base de datos compartida (Firebase) =============== */
-/* PASO ÚNICO DE CONFIGURACIÓN:
-   Pega abajo la URL de tu Firebase Realtime Database.
-   Se ve así:  https://tu-proyecto-default-rtdb.firebaseio.com  */
 const FIREBASE_URL = "https://manada-k9x42-default-rtdb.firebaseio.com/";
 const DB_PATH = "manada-v1";
 function fbPath(key){
@@ -373,6 +370,17 @@ window.storage = {
     return {key, deleted:true};
   }
 };
+
+/* ---- cola offline persistente ---- */
+function persistQueue(){
+  try{ localStorage.setItem("manada_queue", JSON.stringify({q:pendingQueue,c:pendingChanges})); }catch(e){}
+}
+function restoreQueue(){
+  try{
+    const d=JSON.parse(localStorage.getItem("manada_queue"));
+    if(d){ pendingQueue=d.q||[]; pendingChanges=d.c||[]; }
+  }catch(e){}
+}
 
 /* =============== Config =============== */
 const TYPES = {
@@ -402,6 +410,7 @@ let selectedDog = null;
 let who = 0;            // index into settings.people (session-only)
 let view = "home";
 let dashDog = "all";     // "all" | dog id
+let monthsLoaded = 3;    // months of history currently loaded
 let pendingPhoto = null;
 let photoTarget = null;
 let pendingQueue = [];   // entries waiting for connection
@@ -432,7 +441,7 @@ async function loadAll(){
   dogs = dg || [];
   if(st && st.people) settings = st;
   if(cl) changelog = cl;
-  const keys = lastMonthKeys(3);
+  const keys = lastMonthKeys(monthsLoaded);
   const res = await Promise.all(keys.map(k=>sGet(k)));
   keys.forEach((k,i)=>{
     if(res[i]) logs[k] = res[i];
@@ -457,6 +466,7 @@ async function saveEntry(entry){
   const ok = await writeEntry(entry);
   if(!ok){
     pendingQueue.push(entry);
+    persistQueue();
     toast("Sin señal — guardado en el teléfono, se enviará ⏳");
   }
   return ok;
@@ -476,19 +486,24 @@ async function logChange(action, entry){
     what:(TYPES[entry.type]?TYPES[entry.type].label:entry.type)+" · "+(dog?dog.name:"?")+" · "+
          new Date(entry.ts).toLocaleString('es-CL')+(entry.detail?" · "+entry.detail:"") };
   const ok = await writeChange(rec);
-  if(!ok) pendingChanges.push(rec);
+  if(!ok){ pendingChanges.push(rec); persistQueue(); }
 }
 function dupIds(entries){
   const flagged = new Set();
+  const nd = e => (e.detail||"").trim().toLowerCase();
   const arr = [...entries].sort((a,b)=>a.ts-b.ts);
   for(let i=0;i<arr.length;i++){
     for(let j=i+1;j<arr.length;j++){
       if(arr[j].ts - arr[i].ts > 10*60000) break;
-      if(arr[i].dogId===arr[j].dogId && arr[i].type===arr[j].type){ flagged.add(arr[i].id); flagged.add(arr[j].id); }
+      if(arr[i].dogId===arr[j].dogId && arr[i].type===arr[j].type && nd(arr[i])===nd(arr[j])){
+        flagged.add(arr[i].id); flagged.add(arr[j].id);
+      }
     }
   }
   return flagged;
 }
+function whoList(e){ return Array.isArray(e.who) ? e.who : (e.who ? [e.who] : []); }
+function whoDisp(e){ const l=whoList(e); return l.length>1 ? "Ambos" : (l[0]||""); }
 async function flushQueue(){
   if(flushing || (!pendingQueue.length && !pendingChanges.length)) return;
   flushing = true;
@@ -503,6 +518,7 @@ async function flushQueue(){
     const ok = await writeChange(pendingChanges[0]);
     if(ok) pendingChanges.shift(); else break;
   }
+  persistQueue();
   flushing = false;
   if(sent && !pendingQueue.length){ toast("De vuelta en línea — todo sincronizado ✓"); render(); }
   else if(sent){ render(); }
@@ -583,7 +599,7 @@ function renderHome(){
   const isAll = selectedDog==="all";
   const allChip = dogs.length>1 ? `<button class="dog-chip ${isAll?'sel':''}" onclick="selectedDog='all';render()">
     <div class="ring"><div class="ph-empty">🐾</div></div><div class="nm">Todos</div></button>` : "";
-  const dogHtml = allChip + dogs.map(d=>dogChipHtml(d, d.id===selectedDog)).join("") +
+  const dogHtml = dogs.map(d=>dogChipHtml(d, d.id===selectedDog)).join("") + allChip +
     `<button class="dog-chip add" onclick="dogForm()"><div class="ring"><div class="ph-empty">＋</div></div><div class="nm">Agregar</div></button>`;
 
   const qHtml = Object.entries(TYPES).map(([k,t])=>
@@ -610,7 +626,7 @@ function renderHome(){
         <span class="eic">${t.ic}</span>
         <div class="body"><div class="t1">${t.label}${e.detail?` · <span style="font-weight:700;color:var(--ink)">${esc(e.detail)}</span>`:""}${dups.has(e.id)?' <span class="dup">posible duplicado</span>':""}</div>
         ${sub?`<div class="t2">${esc(sub)}</div>`:""}</div>
-        <div class="time">${fmtTime(e.ts)}<small>${pend?"⏳ pendiente":esc(e.who||"")}</small></div></div>`;
+        <div class="time">${fmtTime(e.ts)}<small>${pend?"⏳ pendiente":esc(whoDisp(e))}</small></div></div>`;
     }).join("") + `</div>`;
   }
 
@@ -632,7 +648,8 @@ function logForm(type){
   editing = null;
   const t=TYPES[type];
   form={type, detail:"", note:"", time:new Date().toTimeString().slice(0,5), date:localDate(new Date()),
-        dogIds: selectedDog==="all" ? dogs.map(d=>d.id) : [selectedDog]};
+        dogIds: selectedDog==="all" ? dogs.map(d=>d.id) : [selectedDog],
+        whoSel: [settings.people[who]]};
   const single = dogs.length<2;
   const dogName = single ? (dogs.find(d=>d.id===selectedDog)||{}).name : null;
   const dogSel = single ? "" : `<div class="fld"><label>¿Para quién?</label><div class="chips" id="dogSel">${
@@ -654,10 +671,12 @@ function logForm(type){
   } else if(type==="vet"||type==="note"||type==="groom"){
     extra = "";
   }
+  const whoField = `<div class="fld"><label>¿Quién lo hizo?</label><div class="chips" id="whoSel">${
+    settings.people.map((p,i)=>`<button class="${form.whoSel.includes(p)?'on':''}" onclick="toggleWho(${i},this)">${esc(p)}</button>`).join("")}</div></div>`;
   openSheet(`
     <h2>${t.ic} ${t.label}${dogName?` <span style="font-family:'Nunito Sans';font-size:14px;color:var(--muted);font-weight:700">· ${esc(dogName)}</span>`:""}</h2>
-    <div class="sub">Registrado por ${esc(settings.people[who])}</div>
     ${dogSel}
+    ${whoField}
     ${extra}
     <div class="fld two">
       <div><label>Hora</label><input type="time" id="fTime" value="${form.time}"></div>
@@ -685,13 +704,25 @@ function toggleDog(id,btn){
     form.dogIds.push(id); btn.classList.add("on");
   }
 }
+function toggleWho(idx,btn){
+  const name=settings.people[idx];
+  const i=form.whoSel.indexOf(name);
+  if(i>=0){
+    if(form.whoSel.length===1){ toast("Elige al menos una persona"); return; }
+    form.whoSel.splice(i,1); btn.classList.remove("on");
+  } else {
+    form.whoSel.push(name); btn.classList.add("on");
+  }
+}
 async function submitLog(){
   const dEl=$("fDetail"); if(dEl) form.detail=dEl.value.trim();
   const time=$("fTime").value||"00:00", date=$("fDate").value;
   const ts=new Date(date+"T"+time).getTime();
   const note=($("fNote").value||"").trim();
+  const wsel=(form.whoSel&&form.whoSel.length)?form.whoSel.slice():[settings.people[who]];
+  const whoVal = wsel.length>1 ? wsel : wsel[0];
   if(editing){
-    const entry={...editing, ts, detail:form.detail||"", note};
+    const entry={...editing, ts, detail:form.detail||"", note, who:whoVal};
     if(monthKey(new Date(editing.ts))!==monthKey(new Date(ts))) await deleteEntry(editing);
     editing=null;
     closeSheet();
@@ -705,7 +736,7 @@ async function submitLog(){
   closeSheet();
   for(const id of ids){
     const e={ id:uid(), dogId:id, type:form.type, ts,
-      who:settings.people[who], detail:form.detail||"", note };
+      who:whoVal, detail:form.detail||"", note };
     await saveEntry(e);
     logChange("added", e);
   }
@@ -716,16 +747,20 @@ function editForm(json){
   editing=JSON.parse(json);
   const e=editing, t=TYPES[e.type]||TYPES.note;
   const dog=dogs.find(d=>d.id===e.dogId);
-  form={type:e.type, detail:e.detail||"", note:e.note||""};
+  const wl=whoList(e).filter(p=>settings.people.includes(p));
+  form={type:e.type, detail:e.detail||"", note:e.note||"", whoSel: wl.length?wl:[settings.people[who]]};
   const d=new Date(e.ts);
   let extra="";
   if(e.type==="walk")        extra=chipField("Duración",["10 min","20 min","30 min","45 min","1 h+"],form.detail);
   else if(e.type==="food")   extra=chipField("Comida",["Desayuno","Almuerzo","Cena","Colación"],form.detail);
   else if(e.type==="toilet") extra=chipField("Tipo",["Pipí","Caca","Ambos"],form.detail);
   else if(e.type==="med")    extra=`<div class="fld"><label>Remedio y dosis</label><input type="text" id="fDetail" value="${esc(form.detail)}"></div>`;
+  const whoField = `<div class="fld"><label>¿Quién lo hizo?</label><div class="chips" id="whoSel">${
+    settings.people.map((p,i)=>`<button class="${form.whoSel.includes(p)?'on':''}" onclick="toggleWho(${i},this)">${esc(p)}</button>`).join("")}</div></div>`;
   openSheet(`
     <h2>${t.ic} Editar ${t.label.toLowerCase()}</h2>
-    <div class="sub">${esc(dog?dog.name:"")} · registrado por ${esc(e.who||"?")}</div>
+    <div class="sub">${esc(dog?dog.name:"")} · registrado por ${esc(whoDisp(e)||"?")}</div>
+    ${whoField}
     ${extra}
     <div class="fld two">
       <div><label>Hora</label><input type="time" id="fTime" value="${d.toTimeString().slice(0,5)}"></div>
@@ -743,7 +778,7 @@ function entrySheet(json){
   const dog=dogs.find(d=>d.id===e.dogId);
   openSheet(`
     <h2>${t.ic} ${t.label}</h2>
-    <div class="sub">${esc(dog?dog.name:"")} · ${new Date(e.ts).toLocaleString('es-CL')} · por ${esc(e.who||"?")}</div>
+    <div class="sub">${esc(dog?dog.name:"")} · ${new Date(e.ts).toLocaleString('es-CL')} · por ${esc(whoDisp(e)||"?")}</div>
     ${e.detail?`<div class="fld"><label>Detalle</label><div style="font-weight:700">${esc(e.detail)}</div></div>`:""}
     ${e.note?`<div class="fld"><label>Nota</label><div>${esc(e.note)}</div></div>`:""}
     <button class="btn pri" onclick='editForm(${JSON.stringify(json)})'>Editar</button>
@@ -755,9 +790,17 @@ async function confirmDelete(json){
   const e=JSON.parse(json);
   closeSheet();
   pendingQueue = pendingQueue.filter(x=>x.id!==e.id);
+  persistQueue();
   await deleteEntry(e);
   logChange("deleted", e);
   toast("Registro eliminado");
+  render();
+}
+
+async function loadMoreMonths(){
+  monthsLoaded += 3;
+  toast("Cargando meses anteriores…");
+  await loadAll();
   render();
 }
 
@@ -787,7 +830,7 @@ async function exportData(fmt){
     const dog=dogs.find(x=>x.id===e.dogId);
     return { Fecha:localDate(new Date(e.ts)), Hora:fmtTime(e.ts),
       Perro:dog?dog.name:"?", Tipo:TYPES[e.type]?TYPES[e.type].label:e.type,
-      Detalle:e.detail||"", Nota:e.note||"", "Registrado por":e.who||"" };
+      Detalle:e.detail||"", Nota:e.note||"", "Registrado por":whoList(e).join(" + ") };
   });
   const fname="manada-"+localDate(new Date());
   if(fmt==="csv"){
@@ -854,15 +897,16 @@ function renderHistory(){
       <span class="eic">${t.ic}</span>
       <div class="body"><div class="t1">${t.label}${e.detail?` · <span style="font-weight:700;color:var(--ink)">${esc(e.detail)}</span>`:""}${dups.has(e.id)?' <span class="dup">posible duplicado</span>':""}</div>
       <div class="t2">${esc(dog?dog.name:"?")}${e.note?" · "+esc(e.note):""}</div></div>
-      <div class="time">${fmtTime(e.ts)}<small>${isPending(e.id)?"⏳ pendiente":esc(e.who||"")}</small></div></div>`;
+      <div class="time">${fmtTime(e.ts)}<small>${isPending(e.id)?"⏳ pendiente":esc(whoDisp(e))}</small></div></div>`;
   });
   m.innerHTML=seg+dogChips+typeChips+
     (html||`<div class="empty">No hay registros con estos filtros.</div>`)+
-    `<div class="export-row">
+    `<button class="btn ghost" style="text-align:left;padding-left:2px;color:var(--moss)" onclick="loadMoreMonths()">⤓ Cargar 3 meses más (mostrando ${monthsLoaded})</button>
+    <div class="export-row">
       <button class="exbtn" onclick="exportData('xlsx')">⬇️&nbsp; Exportar Excel (.xlsx)</button>
       <button class="exbtn" onclick="exportData('csv')">⬇️&nbsp; Exportar CSV</button>
     </div>
-    <div class="mini-note" style="margin:8px 4px 16px">Exporta los registros según los filtros actuales (últimos 3 meses); el Excel incluye además los cambios en una segunda hoja. Los registros del mismo tipo con menos de 10 minutos de diferencia se marcan como <b>posible duplicado</b> — toca uno para editarlo o eliminarlo.</div>`;
+    <div class="mini-note" style="margin:8px 4px 16px">Mostrando los últimos ${monthsLoaded} meses — los datos antiguos <b>nunca se borran</b>: usa «Cargar 3 meses más» para verlos y exportarlos. La exportación incluye todo lo cargado según los filtros; el Excel suma los cambios en una segunda hoja. Se marca <b>posible duplicado</b> cuando coinciden tipo y detalle con menos de 10 minutos de diferencia.</div>`;
 }
 
 /* =============== Dashboard =============== */
@@ -893,13 +937,13 @@ function renderDash(){
 
   // care split (last 7 days, all activity + walk minutes)
   const act7 = src.filter(in7);
-  const counts = settings.people.map(p=>act7.filter(e=>e.who===p).length);
+  const counts = settings.people.map(p=>act7.filter(e=>whoList(e).includes(p)).length);
   const totalAct = counts.reduce((a,b)=>a+b,0)||1;
   const durOf = e => {
     const mch=(e.detail||"").match(/(\d+)\s*min/); if(mch) return +mch[1];
     if(/1\s*h/.test(e.detail||"")) return 60; return 0;
   };
-  const walkMins = settings.people.map(p=>walks7.filter(e=>e.who===p).reduce((a,e)=>a+durOf(e),0));
+  const walkMins = settings.people.map(p=>walks7.filter(e=>whoList(e).includes(p)).reduce((a,e)=>a+durOf(e),0));
   const totalMins = walkMins.reduce((a,b)=>a+b,0)||1;
 
   const maxW=Math.max(...walksByDay,1), maxM=Math.max(...mealsByDay,1);
@@ -1061,7 +1105,8 @@ function renderSettings(){
       <div class="fld"><label>Persona 2</label><input type="text" id="p2" value="${esc(settings.people[1])}"></div>
       <button class="btn pri" onclick="savePeople()">Guardar nombres</button></div>
     <div class="set-card"><h3>ℹ️ Datos compartidos</h3>
-      <div class="mini-note">Los datos viven en tu propia base de datos (Firebase) — lo que registre cualquiera de los dos aparece en ambos teléfonos. Agrega esta página a tu pantalla de inicio (Compartir → Agregar a pantalla de inicio) para que se abra como una app a pantalla completa.</div></div>`;
+      <div class="mini-note">Los datos viven en tu propia base de datos (Firebase) — lo que registre cualquiera de los dos aparece en ambos teléfonos. Agrega esta página a tu pantalla de inicio (Compartir → Agregar a pantalla de inicio) para que se abra como una app a pantalla completa.</div>
+</div>`;
 }
 async function savePeople(){
   settings.people=[$("p1").value.trim()||"Persona 1", $("p2").value.trim()||"Persona 2"];
@@ -1137,16 +1182,10 @@ async function removeDog(id){
 
 /* =============== Boot =============== */
 (async function(){
-  if(FIREBASE_URL.includes("PEGA_AQUI")){
-    $("main").innerHTML = `<div class="welcome">
-      <div style="font-size:40px;margin-bottom:12px">🔧</div>
-      <h2 style="font-size:22px;margin-bottom:10px">Falta un paso de configuración</h2>
-      <p>Abre <b>index.html</b> y pega la URL de tu Firebase Realtime Database en la línea <b>FIREBASE_URL</b>, cerca del inicio del código. Luego guarda y recarga.</p></div>`;
-    return;
-  }
+  restoreQueue();
+  await flushQueue();
   await loadAll();
   render();
-  // light auto-refresh so entries from the other phone appear
   setInterval(async ()=>{
     if(document.querySelector(".sheet.open")) return;
     if(navigator.onLine===false) return;   // offline: keep what we have on screen
