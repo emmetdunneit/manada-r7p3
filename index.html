@@ -349,76 +349,27 @@
 <input type="file" accept="image/*" id="rxInput" style="display:none">
 
 <script>
-/* =============== Base de datos compartida (Firebase + Auth) =============== */
-/* CONFIGURACIÓN (2 valores):
-   1) FIREBASE_URL: la URL de tu Realtime Database
-      ej: https://tu-proyecto-default-rtdb.firebaseio.com
-   2) FIREBASE_API_KEY: en Firebase → ⚙️ Configuración del proyecto → General → "Clave de API web" */
+/* =============== Base de datos compartida (Firebase) =============== */
 const FIREBASE_URL = "https://manada-k9x42-default-rtdb.firebaseio.com/";
-const FIREBASE_API_KEY = "PEGA_AQUI_LA_WEB_API_KEY";
 const DB_PATH = "manada-v1";
 function fbPath(key){
   return FIREBASE_URL.replace(/\/+$/,"") + "/" + DB_PATH + "/" + key.replace(/[.#$\[\]\/]/g,"_") + ".json";
 }
-
-/* ---- sesión ---- */
-let authTok = null; // {idToken, refreshToken, exp, email}
-function authLoad(){ try{ authTok=JSON.parse(localStorage.getItem("manada_auth"))||null; }catch(e){ authTok=null; } }
-function authSave(){ try{ authTok?localStorage.setItem("manada_auth",JSON.stringify(authTok)):localStorage.removeItem("manada_auth"); }catch(e){} }
-async function authSignIn(email, pass){
-  const r = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key="+FIREBASE_API_KEY, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({email, password:pass, returnSecureToken:true})
-  });
-  const d = await r.json();
-  if(!r.ok) throw new Error((d.error&&d.error.message)||"login");
-  authTok = {idToken:d.idToken, refreshToken:d.refreshToken,
-             exp:Date.now()+(parseInt(d.expiresIn||"3600",10)-60)*1000, email};
-  authSave();
-}
-async function authRefresh(){
-  if(!authTok||!authTok.refreshToken) throw new Error("no session");
-  const r = await fetch("https://securetoken.googleapis.com/v1/token?key="+FIREBASE_API_KEY, {
-    method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"},
-    body:"grant_type=refresh_token&refresh_token="+encodeURIComponent(authTok.refreshToken)
-  });
-  const d = await r.json();
-  if(!r.ok){ throw new Error("refresh"); }
-  authTok = {idToken:d.id_token, refreshToken:d.refresh_token,
-             exp:Date.now()+(parseInt(d.expires_in||"3600",10)-60)*1000, email:authTok.email};
-  authSave();
-}
-async function ensureToken(){
-  if(!authTok) throw new Error("no session");
-  if(Date.now() > authTok.exp) await authRefresh();
-  return authTok.idToken;
-}
-function signOut(){ authTok=null; authSave(); location.reload(); }
-
-async function fbFetch(key, opts){
-  let t = await ensureToken();
-  let r = await fetch(fbPath(key)+"?auth="+encodeURIComponent(t), opts);
-  if(r.status===401||r.status===403){
-    await authRefresh();
-    r = await fetch(fbPath(key)+"?auth="+encodeURIComponent(authTok.idToken), opts);
-  }
-  return r;
-}
 window.storage = {
   async get(key){
-    const r = await fbFetch(key);
+    const r = await fetch(fbPath(key));
     if(!r.ok) throw new Error("get failed");
     const v = await r.json();
     if(v===null || v===undefined) throw new Error("not found");
     return {key, value:String(v)};
   },
   async set(key, value){
-    const r = await fbFetch(key, {method:"PUT", body:JSON.stringify(String(value))});
+    const r = await fetch(fbPath(key), {method:"PUT", body:JSON.stringify(String(value))});
     if(!r.ok) throw new Error("set failed");
     return {key, value};
   },
   async delete(key){
-    const r = await fbFetch(key, {method:"DELETE"});
+    const r = await fetch(fbPath(key), {method:"DELETE"});
     if(!r.ok) throw new Error("delete failed");
     return {key, deleted:true};
   }
@@ -1167,8 +1118,7 @@ function renderSettings(){
       <button class="btn pri" onclick="savePeople()">Guardar nombres</button></div>
     <div class="set-card"><h3>ℹ️ Datos compartidos</h3>
       <div class="mini-note">Los datos viven en tu propia base de datos (Firebase) — lo que registre cualquiera de los dos aparece en ambos teléfonos. Agrega esta página a tu pantalla de inicio (Compartir → Agregar a pantalla de inicio) para que se abra como una app a pantalla completa.</div>
-      <div class="mini-note" style="margin-top:8px">Sesión iniciada como <b>${esc(authTok&&authTok.email||"?")}</b>.</div>
-      <button class="btn ghost" style="text-align:left;padding-left:0;color:var(--alert)" onclick="signOut()">Cerrar sesión en este teléfono</button></div>`;
+</div>`;
 }
 async function savePeople(){
   settings.people=[$("p1").value.trim()||"Persona 1", $("p2").value.trim()||"Persona 2"];
@@ -1242,53 +1192,18 @@ async function removeDog(id){
   closeSheet(); toast("Perro eliminado"); render();
 }
 
-/* =============== Login & Boot =============== */
-function renderLogin(){
-  $("main").innerHTML = `<div class="welcome">
-    <div class="w-icons">${DOG_ICONS.map(u=>`<img src="${u}" class="pix" alt="">`).join("")}</div>
-    <h2 style="font-size:23px;margin-bottom:8px">La Manada</h2>
-    <p>Inicia sesión para ver a la manada.<br>Solo hace falta una vez por teléfono.</p>
-    <div class="fld" style="width:100%;max-width:320px;text-align:left;margin-top:16px">
-      <label>Correo</label><input type="text" inputmode="email" autocapitalize="none" id="lgEmail" placeholder="tu@correo.com"></div>
-    <div class="fld" style="width:100%;max-width:320px;text-align:left">
-      <label>Contraseña</label><input type="password" id="lgPass" placeholder="••••••••"></div>
-    <button class="btn pri" onclick="doLogin()">Entrar</button>
-  </div>`;
-}
-async function doLogin(){
-  const e=($("lgEmail").value||"").trim(), p=$("lgPass").value||"";
-  if(!e||!p){ toast("Completa correo y contraseña"); return; }
-  try{ await authSignIn(e,p); }
-  catch(err){ toast("No se pudo iniciar sesión — revisa correo y contraseña"); return; }
-  boot();
-}
-let bootTimer=null;
-async function boot(){
-  $("main").innerHTML='<div class="loading">Buscando a la manada…</div>';
+/* =============== Boot =============== */
+(async function(){
   restoreQueue();
   await flushQueue();
   await loadAll();
   render();
-  if(!bootTimer){
-    bootTimer = setInterval(async ()=>{
-      if(document.querySelector(".sheet.open")) return;
-      if(navigator.onLine===false) return;   // offline: keep what we have on screen
-      await flushQueue();
-      await loadAll(); render();
-    }, 60000);
-  }
-}
-(function(){
-  if(FIREBASE_URL.includes("PEGA_AQUI") || FIREBASE_API_KEY.includes("PEGA_AQUI")){
-    $("main").innerHTML = `<div class="welcome">
-      <div style="font-size:40px;margin-bottom:12px">🔧</div>
-      <h2 style="font-size:22px;margin-bottom:10px">Falta un paso de configuración</h2>
-      <p>Abre <b>index.html</b> y completa <b>FIREBASE_URL</b> y <b>FIREBASE_API_KEY</b> al inicio del código. Luego guarda y recarga.</p></div>`;
-    return;
-  }
-  authLoad();
-  if(!authTok){ renderLogin(); return; }
-  boot();
+  setInterval(async ()=>{
+    if(document.querySelector(".sheet.open")) return;
+    if(navigator.onLine===false) return;   // offline: keep what we have on screen
+    await flushQueue();
+    await loadAll(); render();
+  }, 60000);
 })();
 </script>
 </body>
