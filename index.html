@@ -600,7 +600,7 @@ function renderHome(){
   const m=$("main");
   if(!dogs.length){
     m.innerHTML = `<div class="welcome">
-      <div class="w-icons">${DOG_ICONS.map(u=>`<img src="${u}" class="pix" alt="">`).join("")}</div>
+      <div class="w-icons">${[0,1,6,9].map(i=>`<img src="${DOG_ICONS[i]}" class="pix" alt="">`).join("")}</div>
       <h2 style="font-size:24px;margin-bottom:10px">Bienvenidos a La Manada</h2>
       <p>Agrega tu primer perro para empezar a registrar paseos, comidas y remedios — compartido en vivo entre ustedes dos.</p>
       <button class="btn pri" style="margin-top:22px" onclick="dogForm()">Agregar un perro</button>
