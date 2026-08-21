@@ -61,11 +61,11 @@
 
   main{
     flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;width:100%;
-    padding:12px max(14px, calc((100% - 520px)/2)) 20px;
+    padding:10px max(14px, calc((100% - 520px)/2)) 10px;
   }
 
   /* ---------- Dog selector ---------- */
-  .dog-row{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 10px;scrollbar-width:none}
+  .dog-row{display:flex;gap:13px;overflow-x:auto;padding:2px 2px 7px;scrollbar-width:none}
   .dog-row::-webkit-scrollbar{display:none}
   .dog-chip{flex:0 0 auto;text-align:center;cursor:pointer;border:none;background:none;font-family:inherit}
   .dog-chip .ring{
@@ -88,16 +88,16 @@
   /* ---------- Quick log ---------- */
   .section-label{
     font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
-    color:var(--muted);margin:14px 2px 10px;
+    color:var(--muted);margin:10px 2px 7px;
   }
   .quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
   .qbtn{
     background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-    padding:14px 4px 11px;text-align:center;cursor:pointer;font-family:inherit;
+    padding:10px 4px 8px;text-align:center;cursor:pointer;font-family:inherit;
     box-shadow:var(--shadow);transition:transform .08s;
   }
   .qbtn:active{transform:scale(.94)}
-  .qbtn .ic{font-size:26px;display:block;margin-bottom:5px}
+  .qbtn .ic{font-size:24px;display:block;margin-bottom:3px}
   .qbtn .lb{font-size:12px;font-weight:800;color:var(--pine)}
 
   /* ---------- Timeline ---------- */
@@ -109,7 +109,7 @@
   }
   .entry{
     position:relative;background:var(--card);border:1px solid var(--line);
-    border-radius:14px;padding:11px 13px;margin-bottom:9px;box-shadow:var(--shadow);
+    border-radius:14px;padding:10px 12px;margin-bottom:8px;box-shadow:var(--shadow);
     display:flex;align-items:center;gap:11px;cursor:pointer;
   }
   .entry::before{
@@ -250,14 +250,14 @@
   nav{
     background:var(--card);flex-shrink:0;
     border-top:1px solid var(--line);display:flex;
-    padding:4px 8px calc(4px + env(safe-area-inset-bottom));
+    padding:2px 8px max(6px, calc(env(safe-area-inset-bottom) - 16px));
   }
   nav button{
     flex:1;border:none;background:none;font-family:inherit;cursor:pointer;
-    display:flex;flex-direction:column;align-items:center;gap:1px;padding:5px 0 4px;
-    color:var(--muted);font-size:11px;font-weight:800;border-radius:12px;
+    display:flex;flex-direction:column;align-items:center;gap:0;padding:4px 0 3px;
+    color:var(--muted);font-size:10.5px;font-weight:800;border-radius:12px;
   }
-  nav button .nic{font-size:20px}
+  nav button .nic{font-size:19px}
   nav button.on{color:var(--pine);background:var(--field)}
 
   /* ---------- Sheet ---------- */
